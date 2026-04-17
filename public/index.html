@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ULTRA NEXUS // Universal Decoder API</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg: #050508;
+            --neon-green: #39ff14;
+            --neon-blue: #00f3ff;
+            --dark-panel: rgba(10, 10, 15, 0.9);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg);
+            color: #fff;
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .matrix-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            z-index: -1;
+        }
+
+        .container { max-width: 1300px; margin: 0 auto; padding: 2rem; }
+
+        header { text-align: center; margin-bottom: 2rem; }
+        
+        h1 {
+            font-size: 3.5rem;
+            color: var(--neon-blue);
+            text-shadow: 0 0 10px var(--neon-blue), 0 0 20px var(--neon-blue);
+            text-transform: uppercase;
+        }
+
+        .controls {
+            display: flex; justify-content: center; gap: 1rem; margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid var(--neon-green);
+            padding: 12px 24px;
+            font-family: inherit;
+            font-size: 1.2rem;
+            color: var(--neon-green);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 0 5px var(--neon-green), 0 0 10px rgba(57, 255, 20, 0.2);
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--neon-green);
+            color: #000;
+            box-shadow: 0 0 20px var(--neon-green);
+        }
+
+        .btn-blue { border-color: var(--neon-blue); color: var(--neon-blue); box-shadow: inset 0 0 5px var(--neon-blue); }
+        .btn-blue:hover:not(:disabled) { background: var(--neon-blue); color: #000; box-shadow: 0 0 20px var(--neon-blue); }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .editor-container { display: flex; gap: 1.5rem; height: 65vh; }
+        
+        .editor-box {
+            flex: 1; display: flex; flex-direction: column;
+            background: var(--dark-panel);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .editor-header {
+            background: rgba(0, 243, 255, 0.1);
+            padding: 8px 15px;
+            color: var(--neon-blue);
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .CodeMirror {
+            flex-grow: 1; height: 100% !important;
+            font-family: 'Consolas', monospace; font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="matrix-bg"></div>
+    <div class="container">
+        <header>
+            <h1>NEXUS API DECODER</h1>
+            <p style="color: var(--neon-green)">RESTful Support • Any File • Teks & Barcode String Extraction</p>
+        </header>
+
+        <div class="controls">
+            <label for="fileUpload" class="btn btn-blue" id="uploadLabel">[ UPLOAD FILE ANY ]</label>
+            <input type="file" id="fileUpload" style="display: none;">
+            
+            <button id="decodeBtn" class="btn">{ EXECUTE API DECODE }</button>
+            <button id="downloadBtn" class="btn btn-blue" disabled>[ DOWNLOAD RESULT ]</button>
+        </div>
+
+        <div class="editor-container">
+            <div class="editor-box">
+                <div class="editor-header">
+                    <span>/// INPUT.RAW</span>
+                    <span id="statusInput">WAITING...</span>
+                </div>
+                <textarea id="inputCode"></textarea>
+            </div>
+            
+            <div class="editor-box">
+                <div class="editor-header">
+                    <span>/// OUTPUT.DECODED</span>
+                    <span id="statusOutput">IDLE</span>
+                </div>
+                <textarea id="outputCode"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/lua/lua.min.js"></script>
+    
+    <script>
+        // Init Editors
+        const inputEditor = CodeMirror.fromTextArea(document.getElementById("inputCode"), {
+            lineNumbers: true, mode: "lua", theme: "dracula", lineWrapping: true
+        });
+        const outputEditor = CodeMirror.fromTextArea(document.getElementById("outputCode"), {
+            lineNumbers: true, mode: "lua", theme: "dracula", lineWrapping: true, readOnly: true
+        });
+
+        // DOM Elements
+        const fileUpload = document.getElementById('fileUpload');
+        const uploadLabel = document.getElementById('uploadLabel');
+        const decodeBtn = document.getElementById('decodeBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        let currentFile = null;
+
+        // Handle File Selection
+        fileUpload.addEventListener('change', (e) => {
+            currentFile = e.target.files[0];
+            if (!currentFile) return;
+
+            uploadLabel.innerText = `[ FILE: ${currentFile.name} ]`;
+            document.getElementById('statusInput').innerText = "FILE LOADED";
+
+            // Preview konten di editor kiri
+            const reader = new FileReader();
+            reader.onload = (event) => inputEditor.setValue(event.target.result);
+            reader.readAsText(currentFile);
+        });
+
+        // Execute API Decode
+        decodeBtn.addEventListener('click', async () => {
+            const rawText = inputEditor.getValue();
+            if (!rawText && !currentFile) return alert("Pilih file atau ketik kode terlebih dahulu!");
+
+            decodeBtn.innerText = "{ PROCESSING... }";
+            document.getElementById('statusOutput').innerText = "DECODING VIA REST API...";
+
+            try {
+                let response;
+                
+                // Jika user memilih file, kita kirim sebagai file via REST API (FormData)
+                if (currentFile && !inputEditor.getValue().includes("MODIFIED")) {
+                    const formData = new FormData();
+                    formData.append('scriptFile', currentFile);
+                    
+                    response = await fetch('/api/decode', { method: 'POST', body: formData });
+                } 
+                // Jika user mengetik manual, kita kirim sebagai JSON
+                else {
+                    response = await fetch('/api/decode', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code: rawText })
+                    });
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    outputEditor.setValue(data.decoded);
+                    document.getElementById('statusOutput').innerText = `SUCCESS (${data.decodedSize} bytes)`;
+                    downloadBtn.disabled = false;
+                } else {
+                    alert("API Error: " + data.message);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Gagal terhubung ke REST API Server.");
+            } finally {
+                decodeBtn.innerText = "{ EXECUTE API DECODE }";
+            }
+        });
+
+        // Download Decoded File
+        downloadBtn.addEventListener('click', () => {
+            const decodedText = outputEditor.getValue();
+            if (!decodedText) return;
+
+            const blob = new Blob([decodedText], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "nexus_decoded_result.txt";
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Jika user mengetik manual, reset file tracker
+        inputEditor.on("change", () => {
+            if (currentFile) {
+                inputEditor.setValue(inputEditor.getValue() + " MODIFIED");
+                currentFile = null;
+                uploadLabel.innerText = "[ UPLOAD FILE ANY ]";
+                document.getElementById('statusInput').innerText = "MANUAL INPUT";
+            }
+        });
+    </script>
+</body>
+</html>
